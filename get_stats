@@ -1,0 +1,67 @@
+#!/usr/bin/perl
+#########################################################
+# Misc VirusTotal Tools
+# 	get_stats - get statis about a file
+#	Written by Silas Cutler 
+#		silas.cutler <at> BlackListThisDomain.com
+##########################################################
+
+use strict;
+use warnings;
+use LWP::UserAgent;
+use JSON;
+
+
+unless (defined ($ARGV[0])){
+	print "Usage: $0 <hash> \n";
+	print " (c) Silas Cutler 2013\n";
+	exit;
+}
+my $request_file = $ARGV[0]; 
+
+
+my $ua = LWP::UserAgent->new(ssl_opts => { verify_hostname => 1 });
+
+my $virus_total_key="";	
+
+my $url='https://www.virustotal.com/vtapi/v2/file/report';
+
+my $response = $ua->post( $url,
+    ['apikey' => $virus_total_key,
+    'resource' => $request_file]
+  );
+die "$url error: ", $response->status_line unless $response->is_success;
+
+my $json_handler = JSON->new->allow_nonref;   
+my $report_json = $json_handler->decode( $response->content );
+
+
+if (defined($report_json->{"permalink"}) ){
+	print "-----------------------------\n";
+	print "MD5            : " . $report_json->{"md5"} . "\n";
+	print "SHA1           : " . $report_json->{"sha1"} . "\n";
+	print "SHA256         : " . $report_json->{"sha256"} . "\n";
+	print "Resource       : " . $report_json->{"resource"} . "\n";
+	print "Detection Rate : " . $report_json->{"positives"} . "/" . $report_json->{"total"} . "\n";
+	print "-----------------------------\n";
+
+} else {
+	print "-----------------------------\n";
+	print "Detection Rate : N/A \n";
+	print "-----------------------------\n";
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+# // Fin
