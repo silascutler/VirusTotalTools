@@ -1,7 +1,10 @@
 
 Misc Tools for checking samples against Virus Total 
 
-# VT_RuleMGR.py
+# Tools
+
+
+## VT_RuleMGR.py
 
 Usage:
 ```
