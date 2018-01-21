@@ -19,6 +19,7 @@ optional arguments:
 ```
 
 Demo:
-[![Demo](repo_meta/demo.gif)](VT_RuleMGR Demo)
+
+![Demo](repo_meta/demo.gif)
 
 
