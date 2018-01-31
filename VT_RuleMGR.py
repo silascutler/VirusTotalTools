@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*- 
 ###############################################
 # Created by Silas Cutler
 #      Silas.Cutler@BlackListThisDomain.com
@@ -20,11 +21,9 @@ class VT_Rule_Handler(object):
         self.optional_notify = "" # Email Address (optional)
         self.optional_daily_limit = 100 # It should be set to: 10/50/100/500/1000/5000/10000
 
-
         # Create Requests session for handling requests
         self.session = requests.Session()
         self.session.headers.update({'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) VTUser:{username}'.format(username=self.username)})
-
 
     # Ensure we keep the most recent CSRF token cached
     def updateCSRFToken(self):
@@ -78,7 +77,7 @@ class VT_Rule_Handler(object):
         return True
 
 ## Functions of object
-    def listRules(self, retRules=False):
+    def listRules(self, retRules=False, retRaw=False):
         return_cache = []
 
         hunting_page_req = self.session.get('https://www.virustotal.com/intelligence/hunting/')
@@ -91,8 +90,33 @@ class VT_Rule_Handler(object):
             else:
                 print "Name: %s (ID: %s)" % (rule[1], rule[0])
 
+        if retRules and retRaw:
+            return return_cache, hunting_page_req
         if retRules:
             return return_cache
+
+    def retroHunt(self, rName):
+        yRule = ""
+        if rName == None:
+            return "[X] Must pass Rule file"
+
+        # Read Yara Rule contents
+        with open(rName, 'r') as f:
+            yRule = f.read()
+
+        create = {'csrfmiddlewaretoken': self.csrf_token_cache,
+                  'rules': yRule}
+
+        createReq = self.session.post('https://www.virustotal.com/intelligence/hunting/retrohunt/', data=create)
+        jcreateReq = createReq.json()
+        if "html" in jcreateReq.keys():
+            if "Queued" in jcreateReq['html']:
+                print "Started sucessfully"
+                return True
+
+        print "Problem:"
+        print createReq.text
+
 
     def createRule(self, rName=None):
         rules = self.listRules(True)
@@ -139,6 +163,90 @@ class VT_Rule_Handler(object):
             print createReq.content
         return False
 
+    def updateRule(self, rSet=None, rName=None):
+        h = HTMLParser.HTMLParser()
+        rules, hunting_page_req = self.listRules(True, True)
+        self.updateCSRFToken()
+        rule_id = ''
+        yRule = ""
+        if rName == None or rSet == None:
+            return "[X] Must pass Rule file"
+
+        for r in rules:
+            if rSet == r[0]:
+                rule_id = r[1]
+                break
+
+        # Read Yara Rule contents
+        with open(rName, 'r') as f:
+            yRule = f.read()
+
+        # Get Rule Contents
+        rPage = hunting_page_req.content.decode("windows-1252").encode('ascii', 'ignore')
+        rExtend = ""
+        rBulk = None
+        if rule_id in rPage:
+            rPage = rPage[ rPage.index(rule_id): ]
+            rPage = rPage[ rPage.index('rule '): ]
+
+            rExtend = rPage[ :rPage.index('>')]
+            rExtend = rExtend[ rPage.index('"'):]
+
+        rPage = rPage[ :rPage.index('"')]
+        rBulk = h.unescape(rPage)
+
+        
+        mNotify = re.search('ruleset-notify=\"(.*)\"', rExtend)
+        mLimit = re.search('ruleset-daily-limit=\"([0-9]+)\"', rExtend)
+
+        enabled = "true" 
+        if "ruleset-enabled=\"false\"" in rExtend:
+            enabled = "false"
+        if mNotify:
+            self.optional_notify = mNotify.group(1)
+            print self.optional_notify
+        else:
+            print "Couldn't Find required Field: Notify"
+            return False
+        if mLimit:
+            self.optional_daily_limit = mLimit.group(1)
+        else:
+            print "Couldn't Find a required Field: Limit"
+            return False
+        if rBulk == None:
+            return "Failed to setup"
+
+        yRule = yRule + "\n\n" + rBulk
+
+        if rule_id:
+            create = {'notify': self.optional_notify,
+                      'daily_limit' : self.optional_daily_limit,
+                      'id': rule_id,
+                      'name':rSet,
+                      'enabled': enabled,
+                      'csrfmiddlewaretoken': self.csrf_token_cache,
+                      'rules': yRule}
+
+        createReq = self.session.post('https://www.virustotal.com/intelligence/hunting/save-ruleset/', data=create)
+        jcreateReq = createReq.json()
+
+        if 'is_owner' in jcreateReq.keys() and 'id' in jcreateReq.keys():
+            if  jcreateReq['is_owner']== "true":
+                print "Updated {yara_name}".format(yara_name=jcreateReq['name'])
+                return True
+        elif 'syntax_error' in jcreateReq.keys():
+            print "Error:\n%s" % h.unescape(jcreateReq['syntax_error'])
+            print "Fix the yara rule and try again!"
+            return False
+        else:
+            print "Failed to create rule"
+            print "Output:"
+            print createReq.content
+        return False
+
+
+
+
     def deleteRule(self, rName):
         rules = self.listRules(True)
         self.updateCSRFToken()
@@ -160,6 +268,7 @@ class VT_Rule_Handler(object):
             print "[X] Could not find rule"
 
         return False
+
 
     def disableRule(self, rName):
         rules = self.listRules(True)
@@ -227,7 +336,12 @@ if __name__ == "__main__":
     parser.add_argument("--list", help="List names/ids of Yara rules stored on VT", action="store_true")
     parser.add_argument("--create", help="Add a Yara rule to VT (File Name used as RuleName",
                         metavar="FILE", type=lambda x: is_valid_file(parser, x))
+    parser.add_argument("--update", help="Update a Yara rule on VT (File Name used as RuleName and must include RuleName",
+                        metavar="FILE", type=lambda x: is_valid_file(parser, x))
+    parser.add_argument("--retro", help="Submit Yara rule to VT RetroHunt (File Name used as RuleName and must include RuleName",
+                        metavar="FILE", type=lambda x: is_valid_file(parser, x))
     parser.add_argument("--delete", help="Delete a Yara rule from VT (By Name)", type=str)
+    parser.add_argument("--update_ruleset", help="Ruleset name to update", type=str)
     parser.add_argument("--disable", help="Disable a Yara rule from VT (By Name)", type=str)
     parser.add_argument("--enable", help="Enable a Yara rule from VT (By Name)", type=str)
     args = parser.parse_args()
@@ -244,6 +358,12 @@ if __name__ == "__main__":
         elif args.delete:
             print "Deleting {arg}".format(arg=args.delete)
             rh.deleteRule(args.delete)
+        elif args.update and args.update_ruleset:
+            print "Adding {rule} to {rset} ".format(rule=args.update, rset=args.update_ruleset)
+            rh.updateRule(args.update_ruleset, args.update)   
+        elif args.retro:
+            print "Starting Retrohunt for {rule}".format(rule=args.retro)
+            rh.retroHunt(args.retro)
         elif args.disable:
             print "Disabling {arg}".format(arg=args.disable)
             rh.disableRule(args.disable)
