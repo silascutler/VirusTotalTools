@@ -217,15 +217,13 @@ class VT_Rule_Handler(object):
             return "Failed to setup"
 
         yRule = yRule + "\n\n" + rBulk
-
-        if rule_id:
-            create = {'notify': self.optional_notify,
-                      'daily_limit' : self.optional_daily_limit,
-                      'id': rule_id,
-                      'name':rSet,
-                      'enabled': enabled,
-                      'csrfmiddlewaretoken': self.csrf_token_cache,
-                      'rules': yRule}
+        create = {'notify': self.optional_notify,
+                  'daily_limit' : self.optional_daily_limit,
+                  'id': rule_id,
+                  'name':rSet,
+                  'enabled': enabled,
+                  'csrfmiddlewaretoken': self.csrf_token_cache,
+                  'rules': yRule}
 
         createReq = self.session.post('https://www.virustotal.com/intelligence/hunting/save-ruleset/', data=create)
         jcreateReq = createReq.json()
