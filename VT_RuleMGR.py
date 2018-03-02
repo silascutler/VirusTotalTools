@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*- 
+# -*- coding: utf-8 -*-
 ###############################################
 # Created by Silas Cutler
 #      Silas.Cutler@BlackListThisDomain.com
@@ -20,6 +20,13 @@ class VT_Rule_Handler(object):
         # Optional Variables for tweaking
         self.optional_notify = "" # Email Address (optional)
         self.optional_daily_limit = 100 # It should be set to: 10/50/100/500/1000/5000/10000
+        self.optional_share_user = "" # user name
+
+        if not self.username and "VT_USERNAME" in os.environ: self.username = os.environ["VT_USERNAME"]
+        if not self.password and "VT_PASSWORD" in os.environ: self.password = os.environ["VT_PASSWORD"]
+        if not self.optional_notify and "VT_NOTIFY" in os.environ: self.optional_notify = os.environ["VT_NOTIFY"]
+        if not self.optional_share_user and "VT_SHARE_USER" in os.environ: 
+            self.optional_share_user = os.environ["VT_SHARE_USER"]
 
         # Create Requests session for handling requests
         self.session = requests.Session()
@@ -117,8 +124,28 @@ class VT_Rule_Handler(object):
         print "Problem:"
         print createReq.text
 
+    def shareRule(self, rule_id):
+        if not self.optional_share_user:
+            print "Cannot share rule, because not user was specified"
+            return False
 
-    def createRule(self, rName=None):
+        shareResponse = self.session.post(
+            "https://www.virustotal.com/intelligence/hunting/share-ruleset/",
+            data={
+                "user": self.optional_share_user,
+                "id": rule_id,
+                "csrfmiddlewaretoken": self.csrf_token_cache,
+            }
+        )
+        jsonResponse = shareResponse.json()
+        if "html" in jsonResponse.keys() and self.optional_share_user in jsonResponse["html"]:
+            print("Successfully shared rule with %s" % self.optional_share_user)
+        else:
+            print("Error while sharing with %s" % self.optional_share_user)
+            return False
+        return True
+
+    def createRule(self, rName=None, do_share=False):
         rules = self.listRules(True)
         self.updateCSRFToken()
         rule_id = ''
@@ -150,6 +177,7 @@ class VT_Rule_Handler(object):
         if 'is_owner' in jcreateReq.keys() and 'id' in jcreateReq.keys():
             if  jcreateReq['is_owner']== "true":
                 print "Created {yara_name}".format(yara_name=jcreateReq['name'])
+                if do_share: return self.shareRule(jcreateReq["id"])
                 return True
         elif 'syntax_error' in jcreateReq.keys():
             h = HTMLParser.HTMLParser()
@@ -194,11 +222,11 @@ class VT_Rule_Handler(object):
         rPage = rPage[ :rPage.index('"')]
         rBulk = h.unescape(rPage)
 
-        
+
         mNotify = re.search('ruleset-notify=\"(.*)\"', rExtend)
         mLimit = re.search('ruleset-daily-limit=\"([0-9]+)\"', rExtend)
 
-        enabled = "true" 
+        enabled = "true"
         if "ruleset-enabled=\"false\"" in rExtend:
             enabled = "false"
         if mNotify:
@@ -339,6 +367,7 @@ if __name__ == "__main__":
     parser.add_argument("--retro", help="Submit Yara rule to VT RetroHunt (File Name used as RuleName and must include RuleName",
                         metavar="FILE", type=lambda x: is_valid_file(parser, x))
     parser.add_argument("--delete", help="Delete a Yara rule from VT (By Name)", type=str)
+    parser.add_argument("--share", help="Shares rule with configured user", action="store_true")
     parser.add_argument("--update_ruleset", help="Ruleset name to update", type=str)
     parser.add_argument("--disable", help="Disable a Yara rule from VT (By Name)", type=str)
     parser.add_argument("--enable", help="Enable a Yara rule from VT (By Name)", type=str)
@@ -352,13 +381,13 @@ if __name__ == "__main__":
             rh.listRules()
         elif args.create:
             print "Creating {arg}".format(arg=args.create)
-            rh.createRule(args.create)
+            rh.createRule(args.create, args.share)
         elif args.delete:
             print "Deleting {arg}".format(arg=args.delete)
             rh.deleteRule(args.delete)
         elif args.update and args.update_ruleset:
             print "Adding {rule} to {rset} ".format(rule=args.update, rset=args.update_ruleset)
-            rh.updateRule(args.update_ruleset, args.update)   
+            rh.updateRule(args.update_ruleset, args.update)
         elif args.retro:
             print "Starting Retrohunt for {rule}".format(rule=args.retro)
             rh.retroHunt(args.retro)
